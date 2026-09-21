@@ -29,11 +29,12 @@ Write-Host "  Junction: $junctionPath"
 
 # Verify the target actually exists before touching the junction.
 if (-not (Test-Path $mavenTarget)) {
-    # Fallback: find the first apache-maven-* subdirectory in the lib folder.
+    # Fallback: find the newest apache-maven-* subdirectory in the lib folder.
+    # Sort by version, not name: apache-maven-3.9.10 is newer than apache-maven-3.9.9.
     $candidates = Get-ChildItem -Path $mavenLibDir -Directory -Filter 'apache-maven-*' -ErrorAction SilentlyContinue |
-                  Sort-Object Name -Descending
+                  Sort-Object { ($_.Name -replace '^apache-maven-' -replace '-.*$') -as [version] }, Name -Descending
     if ($candidates) {
-        $mavenTarget = $candidates[0].FullName
+        $mavenTarget = @($candidates)[0].FullName
         Write-Host "  (version dir not found by name; using $mavenTarget)"
     } else {
         Write-Warning "maven-junction.hook: Cannot locate Maven install directory under $mavenLibDir. Junction not updated."
