@@ -58,6 +58,8 @@ git push origin v1.0.1
 
 ## Install
 
+Requires Chocolatey CLI 1.2.0 or later.
+
 Download the `.nupkg` from [Releases](https://github.com/vdenisov/maven-junction.hook/releases) (or build it), then from an elevated shell in its folder:
 
 ```powershell
