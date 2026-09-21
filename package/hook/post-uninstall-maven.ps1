@@ -4,16 +4,8 @@
 
 $ErrorActionPreference = 'Stop'
 
-# Same location lookup as post-install-maven.ps1.
-$junctionPath = @(
-    $env:MAVEN_JUNCTION_PATH
-    [Environment]::GetEnvironmentVariable('MAVEN_JUNCTION_PATH', 'Machine')
-    [Environment]::GetEnvironmentVariable('MAVEN_JUNCTION_PATH', 'User')
-) | Where-Object { $_ } | Select-Object -First 1
-if (-not $junctionPath) {
-    $toolsLocation = if (Get-Command Get-ToolsLocation -ErrorAction SilentlyContinue) { Get-ToolsLocation } else { 'C:\tools' }
-    $junctionPath = Join-Path $toolsLocation 'maven'
-}
+. (Join-Path $PSScriptRoot 'junction-path.ps1')
+$junctionPath = Get-MavenJunctionPath
 
 $existing = Get-Item $junctionPath -Force -ErrorAction SilentlyContinue
 if ($existing -and $existing.LinkType -ne 'Junction') {

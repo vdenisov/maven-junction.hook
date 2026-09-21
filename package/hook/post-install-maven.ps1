@@ -2,45 +2,41 @@
 # Runs after every `choco install maven` or `choco upgrade maven`.
 # Creates (or retargets) the Maven junction -> the newly installed Maven directory.
 
+param(
+    # Chocolatey provides chocolateyPackageVersion to hook scripts; chocolateyInstall.ps1 passes ''
+    # to use the newest installed Maven directory.
+    [string]$MavenVersion = $env:chocolateyPackageVersion
+)
+
 $ErrorActionPreference = 'Stop'
 
-# Junction location: MAVEN_JUNCTION_PATH (process, then machine, then user scope),
-# falling back to <Chocolatey tools location>\maven, i.e. C:\tools\maven by default.
-$junctionPath = @(
-    $env:MAVEN_JUNCTION_PATH
-    [Environment]::GetEnvironmentVariable('MAVEN_JUNCTION_PATH', 'Machine')
-    [Environment]::GetEnvironmentVariable('MAVEN_JUNCTION_PATH', 'User')
-) | Where-Object { $_ } | Select-Object -First 1
-if (-not $junctionPath) {
-    $toolsLocation = if (Get-Command Get-ToolsLocation -ErrorAction SilentlyContinue) { Get-ToolsLocation } else { 'C:\tools' }
-    $junctionPath = Join-Path $toolsLocation 'maven'
-}
+. (Join-Path $PSScriptRoot 'junction-path.ps1')
+$junctionPath = Get-MavenJunctionPath
 
 # The Maven Chocolatey package unpacks into:
 #   $env:ChocolateyInstall\lib\maven\apache-maven-<version>
-# $env:chocolateyPackageVersion is provided by Chocolatey to all hook scripts.
-$mavenVersion  = $env:chocolateyPackageVersion
-$mavenLibDir   = Join-Path $env:ChocolateyInstall "lib\maven"
-$mavenTarget   = Join-Path $mavenLibDir "apache-maven-$mavenVersion"
+$mavenLibDir = Join-Path $env:ChocolateyInstall "lib\maven"
+$mavenTarget = if ($MavenVersion) { Join-Path $mavenLibDir "apache-maven-$MavenVersion" }
 
-Write-Host "maven-junction.hook: Maven $mavenVersion installed."
-Write-Host "  Target : $mavenTarget"
-Write-Host "  Junction: $junctionPath"
+if ($MavenVersion) {
+    Write-Host "maven-junction.hook: Maven $MavenVersion installed."
+}
 
-# Verify the target actually exists before touching the junction.
-if (-not (Test-Path $mavenTarget)) {
-    # Fallback: find the newest apache-maven-* subdirectory in the lib folder.
+# Package fix versions (e.g. 3.9.9.20260101) don't match the directory name.
+if (-not $mavenTarget -or -not (Test-Path $mavenTarget)) {
     # Sort by version, not name: apache-maven-3.9.10 is newer than apache-maven-3.9.9.
     $candidates = Get-ChildItem -Path $mavenLibDir -Directory -Filter 'apache-maven-*' -ErrorAction SilentlyContinue |
                   Sort-Object { ($_.Name -replace '^apache-maven-' -replace '-.*$') -as [version] }, Name -Descending
     if ($candidates) {
         $mavenTarget = @($candidates)[0].FullName
-        Write-Host "  (version dir not found by name; using $mavenTarget)"
     } else {
         Write-Warning "maven-junction.hook: Cannot locate Maven install directory under $mavenLibDir. Junction not updated."
         return
     }
 }
+
+Write-Host "  Target : $mavenTarget"
+Write-Host "  Junction: $junctionPath"
 
 # Ensure the junction's parent directory exists.
 $junctionParent = Split-Path $junctionPath -Parent
