@@ -7,17 +7,27 @@
     <authors>Victor Denisov</authors>
     <licenseUrl>https://github.com/vdenisov/maven-junction.hook/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/vdenisov/maven-junction.hook</projectUrl>
-    <description>
-      Maintains a stable directory junction (C:\tools\maven by default) that always
-      points to the current Chocolatey-managed Maven installation. After each Maven
-      install or upgrade the junction is automatically retargeted, so tools like
-      IntelliJ IDEA never need their Maven home path updated.
+    <packageSourceUrl>https://github.com/vdenisov/maven-junction.hook</packageSourceUrl>
+    <docsUrl>https://github.com/vdenisov/maven-junction.hook#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/vdenisov/maven-junction.hook/issues</bugTrackerUrl>
+    <releaseNotes>https://github.com/vdenisov/maven-junction.hook/releases</releaseNotes>
+    <copyright>2026 Victor Denisov</copyright>
+    <summary>Keeps a stable directory junction pointing to the Chocolatey-managed Maven installation.</summary>
+    <description><![CDATA[Maintains a stable directory junction (`C:\tools\maven` by default) that always points to the current Chocolatey-managed Maven installation. After each Maven install or upgrade the junction is retargeted, so tools like IntelliJ IDEA never need their Maven home path updated.
 
-      Package parameters:
-      - /JunctionPath:PATH - junction location. Defaults to
-        &lt;Chocolatey tools location&gt;\maven.
-    </description>
+If Maven is already installed, the junction is created when this package is installed.
+
+## Package Parameters
+
+- `/JunctionPath:PATH` - junction location. Defaults to `<Chocolatey tools location>\maven`. Changing it on reinstall or upgrade moves the junction.
+
+Example: `choco install maven-junction.hook --params "/JunctionPath:'D:\sdk\maven'"`
+]]></description>
     <tags>maven junction hook</tags>
+    <dependencies>
+      <!-- Hooks were introduced in Chocolatey CLI 1.2.0. -->
+      <dependency id="chocolatey" version="1.2.0" />
+    </dependencies>
   </metadata>
   <files>
     <file src="hook\**" target="hook" />
