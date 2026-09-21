@@ -1,8 +1,8 @@
 # maven-junction.hook
 
-A [Chocolatey extension hook](https://docs.chocolatey.org/en-us/features/hook/) package that keeps a stable directory junction at `C:\tools\maven` pointing to the Maven installation Chocolatey currently manages.
+A [Chocolatey extension hook](https://docs.chocolatey.org/en-us/features/hook/) package that keeps a stable directory junction (`C:\tools\maven` by default) pointing to the Maven installation Chocolatey currently manages.
 
-After every `choco install maven` or `choco upgrade maven`, the junction moves to the new `apache-maven-<version>` directory. Tools configured with `C:\tools\maven` as their Maven home, such as IntelliJ IDEA, `M2_HOME`, or `PATH`, keep working across upgrades without any changes. `choco uninstall maven` removes the junction.
+After every `choco install maven` or `choco upgrade maven`, the junction moves to the new `apache-maven-<version>` directory. Tools configured with the junction as their Maven home, such as IntelliJ IDEA, `M2_HOME`, or `PATH`, keep working across upgrades without any changes. `choco uninstall maven` removes the junction.
 
 ## How it works
 
@@ -14,6 +14,23 @@ Chocolatey copies the package's `hook\` folder to `%ChocolateyInstall%\hooks\mav
 | `post-uninstall-maven.ps1` | `choco uninstall maven` |
 
 The install hook targets `%ChocolateyInstall%\lib\maven\apache-maven-<version>`. If that directory doesn't exist, it uses the newest `apache-maven-*` directory it finds there instead.
+
+## Junction location
+
+The hooks use the first of these that is set:
+
+1. The `MAVEN_JUNCTION_PATH` environment variable (process, then machine, then user scope).
+2. `<Chocolatey tools location>\maven`, which is `C:\tools\maven` unless the `ChocolateyToolsLocation` environment variable points somewhere else.
+
+The easiest way to set it is with a package parameter at install time. This saves the value as a machine-level `MAVEN_JUNCTION_PATH`:
+
+```powershell
+choco install maven-junction.hook --params "/JunctionPath:'D:\sdk\maven'"
+```
+
+Upgrading the hook package without the parameter keeps the saved location. Uninstalling it removes the variable.
+
+The new location takes effect on the next `choco install` or `choco upgrade` of Maven. The hooks don't remove a junction at the old location, so delete it yourself with `rmdir <old path>`. If a real directory or file (not a junction) already exists at the location, the hooks leave it alone and print a warning.
 
 ## Build
 
@@ -28,7 +45,7 @@ The package is written to `dist\`.
 
 ## Releases
 
-CI builds the package and tests it on every push: it installs the hook and Maven on a clean Windows runner, checks that `C:\tools\maven` is a junction that works, then uninstalls Maven and checks that the junction is gone.
+CI builds the package and tests it on every push, once with the default junction location and once with a custom one passed as `/JunctionPath`. On a clean Windows runner it installs the hook and Maven, checks that the junction exists and `mvn` works through it, then uninstalls Maven and checks that the junction is gone. Finally it uninstalls the hook package and checks that the saved location is removed.
 
 To release, push a version tag. The package version comes from the tag, and the `.nupkg` is attached to a GitHub Release:
 
@@ -60,6 +77,9 @@ package/
   hook/
     post-install-maven.ps1
     post-uninstall-maven.ps1
+  tools/
+    chocolateyInstall.ps1     # saves /JunctionPath as MAVEN_JUNCTION_PATH
+    chocolateyUninstall.ps1   # removes it
 build.ps1
 ```
 

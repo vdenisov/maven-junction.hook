@@ -11,13 +11,22 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  test:
+    name: test (${{ matrix.name }} path)
     runs-on: windows-latest
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            junction-path: ''
+          - name: custom
+            junction-path: 'C:\custom dir\maven'
     defaults:
       run:
         shell: pwsh
+    env:
+      JUNCTION_PATH: ${{ matrix.junction-path }}
     steps:
       - uses: actions/checkout@v7
 
@@ -33,8 +42,17 @@ jobs:
 
       - name: Install hook package
         run: |
-          choco install maven-junction.hook --source "$PWD\dist" -y --no-progress
+          $chocoArgs = @('install', 'maven-junction.hook', '--source', "$PWD\dist", '-y', '--no-progress')
+          if ($env:JUNCTION_PATH) {
+            $chocoArgs += @('--params', "/JunctionPath:'$env:JUNCTION_PATH'")
+          }
+          choco @chocoArgs
           if ($LASTEXITCODE -ne 0) { throw "choco install maven-junction.hook failed ($LASTEXITCODE)" }
+
+          if ($env:JUNCTION_PATH) {
+            $saved = [Environment]::GetEnvironmentVariable('MAVEN_JUNCTION_PATH', 'Machine')
+            if ($saved -ne $env:JUNCTION_PATH) { throw "MAVEN_JUNCTION_PATH is '$saved', expected '$env:JUNCTION_PATH'" }
+          }
 
       # --force makes the hook run even if the runner image already has Maven installed.
       - name: Install Maven and verify junction
@@ -43,17 +61,22 @@ jobs:
           choco install maven -y --force --no-progress
           if ($LASTEXITCODE -ne 0) { throw "choco install maven failed ($LASTEXITCODE)" }
 
-          $junction = Get-Item 'C:\tools\maven' -Force
+          $junctionPath = if ($env:JUNCTION_PATH) { $env:JUNCTION_PATH }
+                          elseif ($env:ChocolateyToolsLocation) { Join-Path $env:ChocolateyToolsLocation 'maven' }
+                          else { "$env:SystemDrive\tools\maven" }
+          "EXPECTED_JUNCTION=$junctionPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          $junction = Get-Item $junctionPath -Force
           if ($junction.LinkType -ne 'Junction') {
-            throw "C:\tools\maven is not a junction (LinkType: '$($junction.LinkType)')"
+            throw "$junctionPath is not a junction (LinkType: '$($junction.LinkType)')"
           }
           $target = @($junction.Target)[0]
-          Write-Host "C:\tools\maven -> $target"
+          Write-Host "$junctionPath -> $target"
           if ((Split-Path $target -Leaf) -notlike 'apache-maven-*') {
             throw "Unexpected junction target: $target"
           }
 
-          & 'C:\tools\maven\bin\mvn.cmd' -v
+          & (Join-Path $junctionPath 'bin\mvn.cmd') -v
           if ($LASTEXITCODE -ne 0) { throw "mvn -v through the junction failed ($LASTEXITCODE)" }
 
       - name: Uninstall Maven and verify junction is removed
@@ -62,20 +85,39 @@ jobs:
           choco uninstall maven -y --no-progress
           if ($LASTEXITCODE -ne 0) { throw "choco uninstall maven failed ($LASTEXITCODE)" }
 
-          if (Get-Item 'C:\tools\maven' -Force -ErrorAction SilentlyContinue) {
-            throw 'C:\tools\maven still exists after uninstalling Maven'
+          if (Get-Item $env:EXPECTED_JUNCTION -Force -ErrorAction SilentlyContinue) {
+            throw "$env:EXPECTED_JUNCTION still exists after uninstalling Maven"
           }
           Write-Host 'Junction removed.'
 
+      - name: Uninstall hook package and verify setting is removed
+        run: |
+          choco uninstall maven-junction.hook -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco uninstall maven-junction.hook failed ($LASTEXITCODE)" }
+
+          if ([Environment]::GetEnvironmentVariable('MAVEN_JUNCTION_PATH', 'Machine')) {
+            throw 'MAVEN_JUNCTION_PATH still set after uninstalling the hook package'
+          }
+
       - uses: actions/upload-artifact@v7
+        if: matrix.name == 'default'
         with:
           name: nupkg
           path: dist/*.nupkg
 
+  release:
+    if: github.ref_type == 'tag'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: nupkg
+          path: dist
+
       - name: Create GitHub release
-        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist\*.nupkg).FullName --title $env:GITHUB_REF_NAME --generate-notes
-          if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
+        run: gh release create "$GITHUB_REF_NAME" dist/*.nupkg --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
