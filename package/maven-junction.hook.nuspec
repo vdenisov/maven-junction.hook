@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>maven-junction.hook</id>
+    <version>1.0.0</version>
+    <title>Maven Junction Hook</title>
+    <authors>Victor Denisov</authors>
+    <projectUrl>https://github.com/vdenisov/maven-junction.hook</projectUrl>
+    <description>
+      Maintains a stable directory junction at C:\tools\maven that always points
+      to the current Chocolatey-managed Maven installation. After each Maven
+      install or upgrade the junction is automatically retargeted, so tools like
+      IntelliJ IDEA never need their Maven home path updated.
+    </description>
+    <tags>maven junction hook</tags>
+  </metadata>
+  <files>
+    <file src="hook\**" target="hook" />
+  </files>
+</package>
