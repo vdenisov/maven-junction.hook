@@ -15,6 +15,8 @@ Chocolatey copies the package's `hook\` folder to `%ChocolateyInstall%\hooks\mav
 
 The install hook targets `%ChocolateyInstall%\lib\maven\apache-maven-<version>`. If that directory doesn't exist, it uses the newest `apache-maven-*` directory it finds there instead.
 
+Installing the hook package also creates the junction right away if Maven is already installed.
+
 ## Junction location
 
 The hooks use the first of these that is set:
@@ -30,7 +32,7 @@ choco install maven-junction.hook --params "/JunctionPath:'D:\sdk\maven'"
 
 Upgrading the hook package without the parameter keeps the saved location. Uninstalling it removes the variable.
 
-The new location takes effect on the next `choco install` or `choco upgrade` of Maven. The hooks don't remove a junction at the old location, so delete it yourself with `rmdir <old path>`. If a real directory or file (not a junction) already exists at the location, the hooks leave it alone and print a warning.
+Changing the location on a reinstall or upgrade of the hook package moves the junction right away: the junction at the old location is removed and a new one is created. If a real directory or file (not a junction) already exists at the location, the hooks leave it alone and print a warning.
 
 ## Build
 
@@ -45,7 +47,7 @@ The package is written to `dist\`.
 
 ## Releases
 
-CI builds the package and tests it on every push, once with the default junction location and once with a custom one passed as `/JunctionPath`. On a clean Windows runner it installs the hook and Maven, checks that the junction exists and `mvn` works through it, then uninstalls Maven and checks that the junction is gone. Finally it uninstalls the hook package and checks that the saved location is removed.
+CI builds the package and tests it on every push, once with the default junction location and once with a custom one passed as `/JunctionPath`. On a clean Windows runner it installs an older Maven and then the hook, and checks that the junction was created. It then upgrades Maven and checks that the junction follows, moves the junction with a new `/JunctionPath`, and uninstalls Maven and the hook, checking that the junction and the saved location are removed.
 
 To release, push a version tag. The package version comes from the tag, and the `.nupkg` is attached to a GitHub Release:
 
@@ -62,19 +64,16 @@ Download the `.nupkg` from [Releases](https://github.com/vdenisov/maven-junction
 choco install maven-junction.hook --source .
 ```
 
-To create the junction for a Maven version that is already installed, reinstall Maven once:
-
-```powershell
-choco install maven --force
-```
-
 ## Layout
 
 ```
-.github/workflows/build.yml
+.github/
+  scripts/assert-junction.ps1
+  workflows/build.yml
 package/
   maven-junction.hook.nuspec
   hook/
+    junction-path.ps1
     post-install-maven.ps1
     post-uninstall-maven.ps1
   tools/

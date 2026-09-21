@@ -27,6 +27,9 @@ jobs:
         shell: pwsh
     env:
       JUNCTION_PATH: ${{ matrix.junction-path }}
+      MOVED_JUNCTION_PATH: 'C:\moved dir\maven'
+      # Any version older than the latest Maven package.
+      OLD_MAVEN_VERSION: '3.9.9'
     steps:
       - uses: actions/checkout@v7
 
@@ -40,8 +43,15 @@ jobs:
           }
           Get-ChildItem dist
 
-      - name: Install hook package
+      # --force: the runner image may already have a newer Maven.
+      - name: Install older Maven
         run: |
+          choco install maven --version $env:OLD_MAVEN_VERSION -y --force --allow-downgrade --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install maven failed ($LASTEXITCODE)" }
+
+      - name: Install hook package and verify junction to installed Maven
+        run: |
+          $ErrorActionPreference = 'Stop'
           $chocoArgs = @('install', 'maven-junction.hook', '--source', "$PWD\dist", '-y', '--no-progress')
           if ($env:JUNCTION_PATH) {
             $chocoArgs += @('--params', "/JunctionPath:'$env:JUNCTION_PATH'")
@@ -54,30 +64,38 @@ jobs:
             if ($saved -ne $env:JUNCTION_PATH) { throw "MAVEN_JUNCTION_PATH is '$saved', expected '$env:JUNCTION_PATH'" }
           }
 
-      # --force makes the hook run even if the runner image already has Maven installed.
-      - name: Install Maven and verify junction
-        run: |
-          $ErrorActionPreference = 'Stop'
-          choco install maven -y --force --no-progress
-          if ($LASTEXITCODE -ne 0) { throw "choco install maven failed ($LASTEXITCODE)" }
-
           $junctionPath = if ($env:JUNCTION_PATH) { $env:JUNCTION_PATH }
                           elseif ($env:ChocolateyToolsLocation) { Join-Path $env:ChocolateyToolsLocation 'maven' }
                           else { "$env:SystemDrive\tools\maven" }
           "EXPECTED_JUNCTION=$junctionPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-          $junction = Get-Item $junctionPath -Force
-          if ($junction.LinkType -ne 'Junction') {
-            throw "$junctionPath is not a junction (LinkType: '$($junction.LinkType)')"
-          }
-          $target = @($junction.Target)[0]
-          Write-Host "$junctionPath -> $target"
-          if ((Split-Path $target -Leaf) -notlike 'apache-maven-*') {
-            throw "Unexpected junction target: $target"
+          $target = .github\scripts\assert-junction.ps1 -Path $junctionPath
+          if ((Split-Path $target -Leaf) -ne "apache-maven-$env:OLD_MAVEN_VERSION") {
+            throw "Expected junction to apache-maven-$env:OLD_MAVEN_VERSION, got $target"
           }
 
-          & (Join-Path $junctionPath 'bin\mvn.cmd') -v
-          if ($LASTEXITCODE -ne 0) { throw "mvn -v through the junction failed ($LASTEXITCODE)" }
+      - name: Upgrade Maven and verify junction is retargeted
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco upgrade maven -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco upgrade maven failed ($LASTEXITCODE)" }
+
+          $target = .github\scripts\assert-junction.ps1 -Path $env:EXPECTED_JUNCTION
+          if ((Split-Path $target -Leaf) -eq "apache-maven-$env:OLD_MAVEN_VERSION") {
+            throw "Junction still points to $target after the upgrade"
+          }
+
+      - name: Change junction location and verify junction is moved
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install maven-junction.hook --source "$PWD\dist" -y --force --no-progress --params "/JunctionPath:'$env:MOVED_JUNCTION_PATH'"
+          if ($LASTEXITCODE -ne 0) { throw "choco install maven-junction.hook --force failed ($LASTEXITCODE)" }
+
+          if (Get-Item $env:EXPECTED_JUNCTION -Force -ErrorAction SilentlyContinue) {
+            throw "$env:EXPECTED_JUNCTION still exists after changing the junction location"
+          }
+          .github\scripts\assert-junction.ps1 -Path $env:MOVED_JUNCTION_PATH | Out-Null
+          "EXPECTED_JUNCTION=$env:MOVED_JUNCTION_PATH" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Uninstall Maven and verify junction is removed
         run: |
