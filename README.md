@@ -26,12 +26,23 @@ Requires Chocolatey.
 
 The package is written to `dist\`.
 
-## Install
+## Releases
 
-From an elevated shell:
+CI builds the package and tests it on every push: it installs the hook and Maven on a clean Windows runner, checks that `C:\tools\maven` is a junction that works, then uninstalls Maven and checks that the junction is gone.
+
+To release, push a version tag. The package version comes from the tag, and the `.nupkg` is attached to a GitHub Release:
 
 ```powershell
-choco install maven-junction.hook --source .\dist
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+## Install
+
+Download the `.nupkg` from [Releases](https://github.com/vdenisov/maven-junction.hook/releases) (or build it), then from an elevated shell in its folder:
+
+```powershell
+choco install maven-junction.hook --source .
 ```
 
 To create the junction for a Maven version that is already installed, reinstall Maven once:
@@ -43,6 +54,7 @@ choco install maven --force
 ## Layout
 
 ```
+.github/workflows/build.yml
 package/
   maven-junction.hook.nuspec
   hook/
@@ -50,3 +62,7 @@ package/
     post-uninstall-maven.ps1
 build.ps1
 ```
+
+## License
+
+[MIT](LICENSE)

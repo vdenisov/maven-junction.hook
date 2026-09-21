@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build package
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            .\build.ps1 -Version ($env:GITHUB_REF_NAME -replace '^v', '')
+          } else {
+            .\build.ps1
+          }
+          Get-ChildItem dist
+
+      - name: Install hook package
+        run: |
+          choco install maven-junction.hook --source "$PWD\dist" -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install maven-junction.hook failed ($LASTEXITCODE)" }
+
+      # --force makes the hook run even if the runner image already has Maven installed.
+      - name: Install Maven and verify junction
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install maven -y --force --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install maven failed ($LASTEXITCODE)" }
+
+          $junction = Get-Item 'C:\tools\maven' -Force
+          if ($junction.LinkType -ne 'Junction') {
+            throw "C:\tools\maven is not a junction (LinkType: '$($junction.LinkType)')"
+          }
+          $target = @($junction.Target)[0]
+          Write-Host "C:\tools\maven -> $target"
+          if ((Split-Path $target -Leaf) -notlike 'apache-maven-*') {
+            throw "Unexpected junction target: $target"
+          }
+
+          & 'C:\tools\maven\bin\mvn.cmd' -v
+          if ($LASTEXITCODE -ne 0) { throw "mvn -v through the junction failed ($LASTEXITCODE)" }
+
+      - name: Uninstall Maven and verify junction is removed
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco uninstall maven -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco uninstall maven failed ($LASTEXITCODE)" }
+
+          if (Get-Item 'C:\tools\maven' -Force -ErrorAction SilentlyContinue) {
+            throw 'C:\tools\maven still exists after uninstalling Maven'
+          }
+          Write-Host 'Junction removed.'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: dist/*.nupkg
+
+      - name: Create GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME (Get-ChildItem dist\*.nupkg).FullName --title $env:GITHUB_REF_NAME --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }

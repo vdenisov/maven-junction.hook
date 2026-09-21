@@ -5,6 +5,7 @@
     <version>1.0.0</version>
     <title>Maven Junction Hook</title>
     <authors>Victor Denisov</authors>
+    <licenseUrl>https://github.com/vdenisov/maven-junction.hook/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/vdenisov/maven-junction.hook</projectUrl>
     <description>
       Maintains a stable directory junction at C:\tools\maven that always points
